@@ -20,10 +20,7 @@ NeoClip AI is a mobile-first video generation app designed to be profitable from
 2. Check if JavaScript is enabled
 3. Try incognito mode
 
-### API key errors
-1. Verify key is correct
-2. Check API provider dashboard for quota
-3. Ensure billing is enabled
+###
 
 ## 📄 License
 
