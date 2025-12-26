@@ -299,7 +299,7 @@ async function pollForCompletion(
 }
 
 /**
- * Main generate function - routes to appropriate provider
+ * Main generate function - now routes through async API
  */
 export async function generateVideo(
   config: VideoConfig,
@@ -311,10 +311,60 @@ export async function generateVideo(
   const duration = Math.min(config.duration, tierConfig.maxLength);
   const adjustedConfig = { ...config, duration };
   
+  // For demo purposes, use the old direct method if no API is available
+  // In production, this would always use the async API
+  const useAsyncAPI = typeof window !== 'undefined' && window.location?.hostname !== 'localhost';
+  
+  if (useAsyncAPI) {
+    try {
+      // Use new async API
+      const response = await fetch('/api/video/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: adjustedConfig.prompt,
+          aspectRatio: adjustedConfig.aspectRatio,
+          duration: adjustedConfig.duration,
+          provider: tier === 'free' ? 'image' : 'fal',
+          tier,
+          userId: 'demo-user' // In production, get from auth
+        })
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        // Return a pending response that will be handled by polling
+        return {
+          success: true,
+          videoUrl: '', // Will be populated by polling
+          taskId: result.jobId,
+          tier,
+          hasAdCard: tier === 'free',
+          isImageSequence: result.isImageSequence,
+          message: result.message
+        };
+      }
+    } catch (error) {
+      console.error('Async API failed, falling back to direct generation:', error);
+    }
+  }
+  
+  // Fallback to direct generation methods
+  return generateVideoDirect(adjustedConfig, tier);
+}
+
+/**
+ * Direct generation function (legacy, for fallback)
+ */
+async function generateVideoDirect(
+  config: VideoConfig,
+  tier: UserTier
+): Promise<GenerationResponse> {
   // Try backend API first (if configured with environment variables)
   try {
     console.log(`Attempting video generation for ${tier} tier via backend API`);
-    const backendResult = await generateWithBackend(adjustedConfig, tier);
+    const backendResult = await generateWithBackend(config, tier);
     if (backendResult.success) {
       console.log('Backend API successful');
       return backendResult;
@@ -329,7 +379,7 @@ export async function generateVideo(
     if (piapiKey && piapiKey !== DEFAULT_API_KEYS.piapi) {
       // Use real API if user has provided a key
       try {
-        const result = await generateWithPiAPI(adjustedConfig, piapiKey);
+        const result = await generateWithPiAPI(config, piapiKey);
         if (result.success) return result;
       } catch (error) {
         console.error('PiAPI with user key failed:', error);
@@ -338,7 +388,7 @@ export async function generateVideo(
     
     // Fallback to image sequence since no true free video APIs are available
     console.log('No video APIs available for free tier, using image sequence fallback');
-    return generateWithImageSequence(adjustedConfig);
+    return generateWithImageSequence(config);
     
   } else {
     // Paid tiers - try FAL with user key if available
@@ -346,7 +396,7 @@ export async function generateVideo(
     if (falKey && falKey !== DEFAULT_API_KEYS.fal) {
       // Use real FAL API if user has provided a key
       try {
-        return await generateWithFAL(adjustedConfig, falKey, tier);
+        return await generateWithFAL(config, falKey, tier);
       } catch (error) {
         console.error('FAL with user key failed:', error);
       }
@@ -354,7 +404,7 @@ export async function generateVideo(
     
     // Fallback to image sequence for paid tiers without API keys
     console.log('No FAL API key available for paid tier, using image sequence fallback');
-    return generateWithImageSequence(adjustedConfig);
+    return generateWithImageSequence(config);
   }
 }
 

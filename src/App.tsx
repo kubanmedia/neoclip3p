@@ -23,12 +23,12 @@ import {
 } from 'lucide-react';
 
 import { 
-  UserState, UserTier, AppView, GeneratedVideo, VideoConfig, 
+  UserState, UserTier, AppView, GeneratedVideo, 
   PRICING, DEFAULT_USER 
 } from './types';
 
-import { 
-  generateVideo, PROMPT_IDEAS
+import {
+  PROMPT_IDEAS
 } from './services/videoService';
 
 import {
@@ -153,76 +153,116 @@ const App: React.FC = () => {
     setIsGenerating(true);
     setGeneratingProgress(0);
 
-    // Simulate progress
-    const progressInterval = setInterval(() => {
-      setGeneratingProgress(prev => Math.min(prev + Math.random() * 10, 90));
-    }, 1000);
-
+    // Create video job via API
     try {
-      const config: VideoConfig = {
-        prompt: prompt.trim(),
-        aspectRatio,
-        duration,
-        image: selectedImage || undefined
-      };
-
-      const result = await generateVideo(config, selectedTier);
-
-      clearInterval(progressInterval);
-      setGeneratingProgress(100);
-
-      if (result.success && (result.videoUrl || result.imageUrls)) {
-        // Handle both video URLs and image sequence fallbacks
-        const mediaUrl = result.videoUrl || (result.imageUrls && result.imageUrls[0]) || '';
-        
-        if (!mediaUrl) {
-          throw new Error('No media URL returned from generation');
-        }
-
-        const newVideo: GeneratedVideo = {
-          id: crypto.randomUUID(),
-          url: mediaUrl,
-          prompt: config.prompt,
-          aspectRatio: config.aspectRatio,
-          timestamp: Date.now(),
-          duration: config.duration,
-          model: result.isImageSequence ? 'Image Sequence (Fallback)' : PRICING[selectedTier].model,
+      const response = await fetch('/api/video/create', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt: prompt.trim(),
+          aspectRatio,
+          duration,
+          provider: selectedTier === 'free' ? 'image' : 'fal', // Use image sequence for free tier
           tier: selectedTier,
-          hasAdCard: selectedTier === 'free'
-        };
+          userId: user.id
+        })
+      });
 
-        // Show message if this is an image sequence fallback
-        if (result.isImageSequence) {
-          setToast({ 
-            message: result.message || 'Video generation unavailable. Showing image preview instead.', 
-            type: 'info' 
-          });
-        }
+      const result = await response.json();
 
-        // Update usage
-        if (selectedTier === 'free') {
-          setUser(prev => ({ ...prev, freeUsed: prev.freeUsed + 1 }));
-        } else {
-          setUser(prev => ({ ...prev, paidUsed: prev.paidUsed + 1 }));
-        }
-
-        // Show ad for free tier
-        if (selectedTier === 'free') {
-          setPendingVideo(newVideo);
-          setShowAdOverlay(true);
-        } else {
-          setVideos(prev => [newVideo, ...prev]);
-          setPrompt('');
-          setSelectedImage(null);
-          setToast({ message: 'Video generated successfully!', type: 'success' });
-        }
-      } else {
-        throw new Error(result.error || 'Generation failed');
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to create video job');
       }
+
+      setGeneratingProgress(10);
+
+      // Poll for status
+      const pollInterval = setInterval(async () => {
+        try {
+          const statusResponse = await fetch(`/api/video/status?jobId=${result.jobId}`);
+          const status = await statusResponse.json();
+
+          if (!status.success) {
+            throw new Error(status.error || 'Failed to check status');
+          }
+
+          // Update progress based on status
+          switch (status.status) {
+            case 'queued':
+              setGeneratingProgress(20);
+              break;
+            case 'processing':
+              setGeneratingProgress(40 + Math.random() * 30); // 40-70%
+              break;
+            case 'completed':
+              clearInterval(pollInterval);
+              setGeneratingProgress(100);
+              
+              if (status.videoUrl) {
+                // Success - create video object
+                const newVideo: GeneratedVideo = {
+                  id: crypto.randomUUID(),
+                  url: status.videoUrl,
+                  prompt: prompt.trim(),
+                  aspectRatio,
+                  timestamp: Date.now(),
+                  duration,
+                  model: status.tier === 'free' ? 'Image Sequence (Fallback)' : PRICING[selectedTier].model,
+                  tier: selectedTier,
+                  hasAdCard: selectedTier === 'free',
+                  thumbnail: status.thumbnailUrl
+                };
+
+                // Update usage
+                if (selectedTier === 'free') {
+                  setUser(prev => ({ ...prev, freeUsed: prev.freeUsed + 1 }));
+                } else {
+                  setUser(prev => ({ ...prev, paidUsed: prev.paidUsed + 1 }));
+                }
+
+                // Show ad for free tier
+                if (selectedTier === 'free') {
+                  setPendingVideo(newVideo);
+                  setShowAdOverlay(true);
+                } else {
+                  setVideos(prev => [newVideo, ...prev]);
+                  setPrompt('');
+                  setSelectedImage(null);
+                  setToast({ message: 'Video generated successfully!', type: 'success' });
+                }
+              } else {
+                throw new Error('No video URL returned');
+              }
+              break;
+            case 'failed':
+              clearInterval(pollInterval);
+              throw new Error(status.error || 'Video generation failed');
+          }
+        } catch (pollError: any) {
+          clearInterval(pollInterval);
+          setIsGenerating(false);
+          setGeneratingProgress(0);
+          
+          // Check if this is an image sequence fallback
+          if (result.isImageSequence) {
+            setToast({ 
+              message: 'Video generation unavailable. Showing image preview instead.', 
+              type: 'info' 
+            });
+          } else {
+            setToast({ message: pollError.message, type: 'error' });
+          }
+        }
+      }, 2000); // Poll every 2 seconds
+
+      // Store interval for cleanup
+      setTimeout(() => clearInterval(pollInterval), 300000); // Stop after 5 minutes
+
     } catch (error: any) {
       console.error('Generation error:', error);
       
-      // Better error messaging
       const errorMessage = error.message || 'Generation failed';
       
       if (errorMessage.includes('unavailable')) {
@@ -233,8 +273,7 @@ const App: React.FC = () => {
       } else {
         setToast({ message: errorMessage, type: 'error' });
       }
-    } finally {
-      clearInterval(progressInterval);
+      
       setIsGenerating(false);
       setGeneratingProgress(0);
     }

@@ -87,6 +87,7 @@ export interface GenerationResponse {
   success: boolean;
   videoUrl?: string;
   taskId?: string;
+  thumbnail?: string;
   error?: string;
   remaining?: number;
   tier?: UserTier;
@@ -94,6 +95,24 @@ export interface GenerationResponse {
   imageUrls?: string[];
   isImageSequence?: boolean;
   message?: string;
+  jobId?: string; // New: for async job tracking
+  status?: 'queued' | 'processing' | 'completed' | 'failed'; // New: job status
+}
+
+export interface VideoJob {
+  id: string;
+  userId: string;
+  prompt: string;
+  aspectRatio: '9:16' | '16:9' | '1:1';
+  duration: number;
+  provider: 'piapi' | 'fal' | 'google';
+  status: 'queued' | 'processing' | 'completed' | 'failed';
+  createdAt: string;
+  updatedAt: string;
+  videoUrl?: string;
+  thumbnail?: string;
+  error?: string;
+  tier: UserTier;
 }
 
 export interface ConnectionStatus {
