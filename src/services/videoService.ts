@@ -156,35 +156,47 @@ async function generateWithFAL(
 }
 
 /**
- * Fallback: Generate image with Pollinations and simulate video
+ * Generate video using image sequence (Fallback for when video APIs are unavailable)
+ * Creates a basic video-like experience using multiple images
  */
-async function generateWithPollinations(config: VideoConfig): Promise<GenerationResponse> {
+async function generateWithImageSequence(config: VideoConfig): Promise<GenerationResponse> {
   try {
-    const seed = Math.floor(Math.random() * 1000000);
-    const dimensions = config.aspectRatio === '9:16' 
-      ? 'width=576&height=1024'
-      : config.aspectRatio === '16:9'
-        ? 'width=1024&height=576'
-        : 'width=720&height=720';
+    console.log('Using image sequence fallback - video APIs unavailable');
     
-    const imageUrl = `${API_ENDPOINTS.pollinations}/${encodeURIComponent(config.prompt)}?${dimensions}&seed=${seed}&model=flux&nologo=true`;
+    const { width, height } = getAspectRatioDimensions(config.aspectRatio);
+    const numFrames = 3; // Generate multiple images for basic animation
+    const imageUrls: string[] = [];
     
-    // Verify image loads
-    const testResponse = await fetch(imageUrl, { method: 'HEAD' });
-    if (!testResponse.ok) {
-      throw new Error('Pollinations image generation failed');
+    // Generate multiple images with different seeds for a simple animation effect
+    for (let i = 0; i < numFrames; i++) {
+      const seed = Math.floor(Math.random() * 1000000) + i;
+      const dimensions = `width=${width}&height=${height}`;
+      
+      const imageUrl = `${API_ENDPOINTS.pollinations}/${encodeURIComponent(config.prompt)}?${dimensions}&seed=${seed}&model=flux&nologo=true`;
+      
+      // Verify image loads
+      const testResponse = await fetch(imageUrl, { method: 'HEAD' });
+      if (!testResponse.ok) {
+        throw new Error(`Image generation failed for frame ${i}`);
+      }
+      
+      imageUrls.push(imageUrl);
     }
     
+    // Return the first image URL with a note that it's an image sequence
     return {
       success: true,
-      videoUrl: imageUrl, // Static image as fallback
+      videoUrl: imageUrls[0], // Use first image as preview
+      imageUrls, // Store all image URLs for potential future use
       tier: 'free',
-      hasAdCard: true
+      hasAdCard: true,
+      isImageSequence: true, // Flag to indicate this is an image sequence, not true video
+      message: 'Video generation unavailable. Showing image preview instead. Add API keys for full video generation.'
     };
   } catch (error: any) {
     return {
       success: false,
-      error: 'All video providers unavailable. Please try again later.'
+      error: 'Video generation unavailable. Please try again later or add API keys for better quality.'
     };
   }
 }
@@ -235,29 +247,37 @@ export async function generateVideo(
   const adjustedConfig = { ...config, duration };
   
   if (tier === 'free') {
-    // Try PiAPI first, fallback to Pollinations
+    // Try PiAPI first if user has provided a real key
     const piapiKey = getStoredKey('piapi');
     if (piapiKey && piapiKey !== DEFAULT_API_KEYS.piapi) {
       // Use real API if user has provided a key
-      const result = await generateWithPiAPI(adjustedConfig, piapiKey);
-      if (result.success) return result;
+      try {
+        const result = await generateWithPiAPI(adjustedConfig, piapiKey);
+        if (result.success) return result;
+      } catch (error) {
+        console.error('PiAPI with user key failed:', error);
+      }
     }
     
-    // Use Pollinations (free, unlimited) as primary for free tier
-    console.log('Using Pollinations for free tier');
-    return generateWithPollinations(adjustedConfig);
+    // Fallback to image sequence since no true free video APIs are available
+    console.log('No video APIs available for free tier, using image sequence fallback');
+    return generateWithImageSequence(adjustedConfig);
     
   } else {
-    // Paid tiers - try FAL with demo key, fallback to Pollinations
+    // Paid tiers - try FAL with user key if available
     const falKey = getStoredKey('fal');
     if (falKey && falKey !== DEFAULT_API_KEYS.fal) {
       // Use real FAL API if user has provided a key
-      return generateWithFAL(adjustedConfig, falKey, tier);
-    } else {
-      // Use Pollinations for paid tiers when no real FAL key
-      console.log('Using Pollinations for paid tier (demo mode)');
-      return generateWithPollinations(adjustedConfig);
+      try {
+        return await generateWithFAL(adjustedConfig, falKey, tier);
+      } catch (error) {
+        console.error('FAL with user key failed:', error);
+      }
     }
+    
+    // Fallback to image sequence for paid tiers without API keys
+    console.log('No FAL API key available for paid tier, using image sequence fallback');
+    return generateWithImageSequence(adjustedConfig);
   }
 }
 

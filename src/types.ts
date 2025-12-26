@@ -91,6 +91,9 @@ export interface GenerationResponse {
   remaining?: number;
   tier?: UserTier;
   hasAdCard?: boolean;
+  imageUrls?: string[];
+  isImageSequence?: boolean;
+  message?: string;
 }
 
 export interface ConnectionStatus {

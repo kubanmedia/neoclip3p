@@ -184,6 +184,14 @@ const App: React.FC = () => {
           hasAdCard: selectedTier === 'free'
         };
 
+        // Show message if this is an image sequence fallback
+        if (result.isImageSequence) {
+          setToast({ 
+            message: result.message || 'Video generation unavailable. Showing image preview instead.', 
+            type: 'info' 
+          });
+        }
+
         // Update usage
         if (selectedTier === 'free') {
           setUser(prev => ({ ...prev, freeUsed: prev.freeUsed + 1 }));
