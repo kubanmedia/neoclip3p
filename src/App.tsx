@@ -171,15 +171,22 @@ const App: React.FC = () => {
       clearInterval(progressInterval);
       setGeneratingProgress(100);
 
-      if (result.success && result.videoUrl) {
+      if (result.success && (result.videoUrl || result.imageUrls)) {
+        // Handle both video URLs and image sequence fallbacks
+        const mediaUrl = result.videoUrl || (result.imageUrls && result.imageUrls[0]) || '';
+        
+        if (!mediaUrl) {
+          throw new Error('No media URL returned from generation');
+        }
+
         const newVideo: GeneratedVideo = {
           id: crypto.randomUUID(),
-          url: result.videoUrl,
+          url: mediaUrl,
           prompt: config.prompt,
           aspectRatio: config.aspectRatio,
           timestamp: Date.now(),
           duration: config.duration,
-          model: PRICING[selectedTier].model,
+          model: result.isImageSequence ? 'Image Sequence (Fallback)' : PRICING[selectedTier].model,
           tier: selectedTier,
           hasAdCard: selectedTier === 'free'
         };
@@ -214,7 +221,18 @@ const App: React.FC = () => {
       }
     } catch (error: any) {
       console.error('Generation error:', error);
-      setToast({ message: error.message || 'Generation failed', type: 'error' });
+      
+      // Better error messaging
+      const errorMessage = error.message || 'Generation failed';
+      
+      if (errorMessage.includes('unavailable')) {
+        setToast({ 
+          message: 'Video generation temporarily unavailable. Using image preview instead.', 
+          type: 'info' 
+        });
+      } else {
+        setToast({ message: errorMessage, type: 'error' });
+      }
     } finally {
       clearInterval(progressInterval);
       setIsGenerating(false);

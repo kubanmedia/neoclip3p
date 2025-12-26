@@ -202,6 +202,71 @@ async function generateWithImageSequence(config: VideoConfig): Promise<Generatio
 }
 
 /**
+ * Generate video using Pollinations (Legacy fallback - returns images)
+ * This is kept for backward compatibility but now redirects to image sequence
+ */
+// @ts-ignore - Keep for backward compatibility
+async function generateWithPollinations(config: VideoConfig): Promise<GenerationResponse> {
+  console.log('Pollinations fallback requested - redirecting to image sequence');
+  return generateWithImageSequence(config);
+}
+
+/**
+ * Generate video using backend API (Self-hosted fallback)
+ */
+async function generateWithBackend(
+  config: VideoConfig,
+  tier: UserTier
+): Promise<GenerationResponse> {
+  try {
+    const response = await fetch(API_ENDPOINTS.backend, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        provider: tier === 'free' ? 'piapi' : 'fal',
+        prompt: config.prompt,
+        aspectRatio: config.aspectRatio
+      })
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Backend API error' }));
+      
+      // If backend returns fallback indication, use image sequence
+      if (errorData.fallback) {
+        console.log('Backend suggests fallback, using image sequence');
+        return generateWithImageSequence(config);
+      }
+      
+      throw new Error(errorData.error || `Backend error: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    const videoUrl = data.video_url || data.url || data.video?.url;
+    
+    if (!videoUrl) {
+      throw new Error('No video URL in backend response');
+    }
+    
+    return {
+      success: true,
+      videoUrl,
+      taskId: data.taskId || data.id,
+      tier,
+      hasAdCard: tier === 'free'
+    };
+  } catch (error: any) {
+    console.error('Backend generation failed:', error);
+    
+    // Fallback to image sequence if backend fails
+    console.log('Backend failed, falling back to image sequence');
+    return generateWithImageSequence(config);
+  }
+}
+
+/**
  * Poll for video completion (PiAPI)
  */
 async function pollForCompletion(
@@ -245,6 +310,18 @@ export async function generateVideo(
   // Enforce duration limits
   const duration = Math.min(config.duration, tierConfig.maxLength);
   const adjustedConfig = { ...config, duration };
+  
+  // Try backend API first (if configured with environment variables)
+  try {
+    console.log(`Attempting video generation for ${tier} tier via backend API`);
+    const backendResult = await generateWithBackend(adjustedConfig, tier);
+    if (backendResult.success) {
+      console.log('Backend API successful');
+      return backendResult;
+    }
+  } catch (error) {
+    console.log('Backend API failed, trying direct provider APIs');
+  }
   
   if (tier === 'free') {
     // Try PiAPI first if user has provided a real key
