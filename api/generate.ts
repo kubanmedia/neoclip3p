@@ -52,4 +52,4 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     console.error(error);
     return res.status(500).json({ error: 'Server error' });
   }
-  }
+}

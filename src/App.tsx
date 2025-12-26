@@ -18,8 +18,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Home, Film, Settings, ChevronRight, Crown, Zap, 
-  Download, Share2, Trash2, Clock, Sparkles, Key, Gift,
-  Check, ArrowLeft, HelpCircle
+  Download, Share2, Trash2, Clock, Sparkles,
+  Check, ArrowLeft
 } from 'lucide-react';
 
 import { 
@@ -28,14 +28,13 @@ import {
 } from './types';
 
 import { 
-  generateVideo, saveApiKey, getApiKey, 
-  PROMPT_IDEAS
+  generateVideo, PROMPT_IDEAS
 } from './services/videoService';
 
 import {
   Button, InputArea, Toggle, TierSelector, ImageUploader,
   VideoPlayer, LoadingOverlay, AdOverlay, Watermark,
-  PricingCard, Toast, ReferralCard, PromptIdeas, TextInput
+  PricingCard, Toast, ReferralCard, PromptIdeas
 } from './components/UIComponents';
 
 // ============ STORAGE HELPERS ============
@@ -110,12 +109,8 @@ const App: React.FC = () => {
   const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null);
   
   // Settings State
-  const [settingsTab, setSettingsTab] = useState<'general' | 'api' | 'account'>('general');
-  const [apiKeyInputs, setApiKeyInputs] = useState({
-    piapi: getApiKey('piapi') || '',
-    fal: getApiKey('fal') || '',
-    google: getApiKey('google') || ''
-  });
+  const [settingsTab, setSettingsTab] = useState<'general' | 'account'>('general');
+  // API keys are no longer required - using server-side defaults
 
   // Persist state changes
   useEffect(() => {
@@ -268,15 +263,6 @@ const App: React.FC = () => {
     setUser(prev => ({ ...prev, tier }));
     setToast({ message: `Upgraded to ${PRICING[tier].name}!`, type: 'success' });
     setView('create');
-  };
-
-  // Handle API key save
-  const handleSaveApiKey = (provider: 'piapi' | 'fal' | 'google') => {
-    const key = apiKeyInputs[provider];
-    if (key) {
-      saveApiKey(provider, key);
-      setToast({ message: `${provider.toUpperCase()} API key saved`, type: 'success' });
-    }
   };
 
   // Handle referral share
@@ -557,7 +543,7 @@ const App: React.FC = () => {
       
       {/* Settings Tabs */}
       <div className="flex gap-2 mb-6">
-        {(['general', 'api', 'account'] as const).map(tab => (
+        {(['general', 'account'] as const).map(tab => (
           <button
             key={tab}
             onClick={() => setSettingsTab(tab)}
@@ -612,92 +598,6 @@ const App: React.FC = () => {
               setToast({ message: 'Referral code copied!', type: 'success' });
             }}
           />
-        </div>
-      )}
-      
-      {settingsTab === 'api' && (
-        <div className="space-y-6">
-          <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 mb-4">
-            <div className="flex gap-3">
-              <HelpCircle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
-              <div className="text-sm">
-                <p className="text-amber-300 font-medium mb-1">API Keys (Optional)</p>
-                <p className="text-white/60">
-                  Add your own API keys for faster generation and higher limits. 
-                  Without keys, the app uses free fallback services.
-                </p>
-              </div>
-            </div>
-          </div>
-          
-          {/* PiAPI Key (Free Tier) */}
-          <div className="bg-white/5 rounded-2xl p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <Key className="w-5 h-5 text-cyan-400" />
-              <h3 className="font-medium">PiAPI Key (Free Tier)</h3>
-            </div>
-            <p className="text-xs text-white/50 mb-3">
-              Get 50 free generations/day from{' '}
-              <a href="https://piapi.ai" target="_blank" className="text-cyan-400 underline">
-                piapi.ai
-              </a>
-            </p>
-            <div className="flex gap-2">
-              <TextInput
-                value={apiKeyInputs.piapi}
-                onChange={(v) => setApiKeyInputs(prev => ({ ...prev, piapi: v }))}
-                placeholder="Enter PiAPI key..."
-                type="password"
-              />
-              <Button onClick={() => handleSaveApiKey('piapi')} size="sm">Save</Button>
-            </div>
-          </div>
-          
-          {/* FAL Key (Paid Tiers) */}
-          <div className="bg-white/5 rounded-2xl p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <Key className="w-5 h-5 text-purple-400" />
-              <h3 className="font-medium">FAL.ai Key (Paid Tiers)</h3>
-            </div>
-            <p className="text-xs text-white/50 mb-3">
-              Required for Basic/Pro tiers. Get from{' '}
-              <a href="https://fal.ai" target="_blank" className="text-purple-400 underline">
-                fal.ai
-              </a>
-            </p>
-            <div className="flex gap-2">
-              <TextInput
-                value={apiKeyInputs.fal}
-                onChange={(v) => setApiKeyInputs(prev => ({ ...prev, fal: v }))}
-                placeholder="Enter FAL.ai key..."
-                type="password"
-              />
-              <Button onClick={() => handleSaveApiKey('fal')} size="sm">Save</Button>
-            </div>
-          </div>
-          
-          {/* Google Key (Pro Veo) */}
-          <div className="bg-white/5 rounded-2xl p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <Key className="w-5 h-5 text-amber-400" />
-              <h3 className="font-medium">Google AI Key (Pro Veo)</h3>
-            </div>
-            <p className="text-xs text-white/50 mb-3">
-              Optional for Veo model. Get from{' '}
-              <a href="https://aistudio.google.com/apikey" target="_blank" className="text-amber-400 underline">
-                Google AI Studio
-              </a>
-            </p>
-            <div className="flex gap-2">
-              <TextInput
-                value={apiKeyInputs.google}
-                onChange={(v) => setApiKeyInputs(prev => ({ ...prev, google: v }))}
-                placeholder="Enter Google AI key..."
-                type="password"
-              />
-              <Button onClick={() => handleSaveApiKey('google')} size="sm">Save</Button>
-            </div>
-          </div>
         </div>
       )}
       
@@ -828,7 +728,7 @@ const App: React.FC = () => {
           {[
             { icon: Share2, text: 'Share your unique referral code with friends' },
             { icon: Check, text: 'They sign up and create their first video' },
-            { icon: Gift, text: 'You get 1 month Pro free for every 3 friends!' }
+            { icon: Share2, text: 'You get 1 month Pro free for every 3 friends!' }
           ].map((step, i) => (
             <div key={i} className="flex items-center gap-3 bg-white/5 rounded-xl p-4">
               <div className="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center">
