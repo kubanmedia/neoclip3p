@@ -39,18 +39,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Tier-based validation
     if (tier === 'free') {
       // Free tier: Use image sequence only, no real video generation
-      const result = await createVideoJob({
+      const jobId = `img_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+      
+      // Store job data for image sequence
+      const jobData = {
+        id: jobId,
+        provider: 'image',
+        status: 'queued',
+        createdAt: new Date().toISOString(),
+        isImageSequence: true,
         prompt,
         aspectRatio,
-        duration: Math.min(duration, 10), // Max 10s for free tier
-        provider: 'image', // Force image sequence for free tier
-        tier,
-        userId
-      });
+        duration: Math.min(duration, 10)
+      };
+      
+      localStorage.setItem(`video_job_${jobId}`, JSON.stringify(jobData));
 
       return res.status(200).json({
         success: true,
-        jobId: result.jobId,
+        jobId: jobId,
         status: 'queued',
         message: 'Image preview queued for generation',
         tier: 'free',

@@ -212,7 +212,7 @@ const App: React.FC = () => {
                   model: status.tier === 'free' ? 'Image Sequence (Fallback)' : PRICING[selectedTier].model,
                   tier: selectedTier,
                   hasAdCard: selectedTier === 'free',
-                  thumbnail: status.thumbnailUrl
+                  thumbnail: status.thumbnail
                 };
 
                 // Update usage
