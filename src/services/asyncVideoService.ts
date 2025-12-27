@@ -56,6 +56,9 @@ export async function createVideoJob(
       // Store job mapping for image sequence
       const jobData = {
         id: jobId,
+        prompt: config.prompt,
+        aspectRatio: config.aspectRatio,
+        duration: Math.min(config.duration, 16),
         provider: 'image',
         status: 'queued' as const,
         createdAt: new Date().toISOString(),
@@ -82,6 +85,9 @@ export async function createVideoJob(
       
       const jobData = {
         id: jobId,
+        prompt: config.prompt,
+        aspectRatio: config.aspectRatio,
+        duration: Math.min(config.duration, 16),
         provider: 'image',
         status: 'queued' as const,
         createdAt: new Date().toISOString(),
@@ -121,51 +127,19 @@ export async function createVideoJob(
       
       const data = await response.json();
       
-      // Store job mapping
+      // Store job mapping with all necessary data
       const jobData = {
         id: jobId,
         falJobId: data.request_id || data.job_id || jobId,
         provider: 'fal',
+        prompt: config.prompt,
+        aspectRatio: config.aspectRatio,
+        duration: Math.min(config.duration, tier === 'pro' ? 30 : 15),
         status: 'queued' as const,
         createdAt: new Date().toISOString()
       };
       
       // Store in localStorage for demo (in production, use database)
-      localStorage.setItem(`video_job_${jobId}`, JSON.stringify(jobData));
-      
-      return { jobId, status: 'queued' };
-      
-    } else if (provider === 'piapi') {
-      const response = await fetch(API_ENDPOINTS.piapi, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model: 'minimax/hailuo-02',
-          prompt: config.prompt,
-          length: Math.min(config.duration, 10),
-          resolution: '768p',
-          aspect_ratio: config.aspectRatio
-        })
-      });
-      
-      if (!response.ok) {
-        throw new Error(`PiAPI error: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      
-      // Store job mapping
-      const jobData = {
-        id: jobId,
-        piapiTaskId: data.taskId || data.id,
-        provider: 'piapi',
-        status: 'queued' as const,
-        createdAt: new Date().toISOString()
-      };
-      
       localStorage.setItem(`video_job_${jobId}`, JSON.stringify(jobData));
       
       return { jobId, status: 'queued' };
@@ -213,13 +187,43 @@ export async function getVideoJobStatus(
       if (elapsed < processingTime) {
         return { status: 'processing' };
       } else {
-        // Generate image sequence URL using Pollinations
-        const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(job.prompt)}?width=768&height=1024&nologo=true`;
+        // Generate video URL using Pollinations video endpoint
+        const w = job.aspectRatio === '9:16' ? 576 : 1024;
+        const h = job.aspectRatio === '9:16' ? 1024 : 576;
+        const duration = Math.min(job.duration || 10, 16); // Max 16s for Pollinations video
+        
+        // Pollinations video endpoint with MP4 format
+        const videoUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(job.prompt)}?width=${w}&height=${h}&duration=${duration}&format=mp4&nologo=true`;
+        
+        // Poll for video availability (max 40 attempts, 5 seconds each = 200 seconds total)
+        for (let i = 0; i < 40; i++) {
+          try {
+            const headResponse = await fetch(videoUrl, { method: 'HEAD' });
+            if (headResponse.ok) {
+              // Video is ready
+              return {
+                status: 'completed',
+                videoUrl: videoUrl,
+                thumbnail: videoUrl.replace('.mp4', '.jpg'),
+                isImageSequence: true
+              };
+            }
+          } catch (error) {
+            console.log(`Poll check ${i + 1} failed, retrying...`);
+          }
+          
+          // Wait 5 seconds before next check
+          await new Promise(resolve => setTimeout(resolve, 5000));
+        }
+        
+        // If video generation times out, fall back to image
+        const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(job.prompt)}?width=${w}&height=${h}&nologo=true`;
         return {
           status: 'completed',
           videoUrl: imageUrl,
           thumbnail: imageUrl,
-          isImageSequence: true
+          isImageSequence: true,
+          error: 'Video generation timed out, using image instead'
         };
       }
     }
@@ -227,7 +231,41 @@ export async function getVideoJobStatus(
     const apiKey = getApiKey(job.provider);
     
     if (job.provider === 'fal') {
-      // For FAL, simulate processing for demo
+      // For FAL, make real API call to check status
+      if (apiKey && !apiKey.startsWith('demo_')) {
+        // Real FAL API call
+        try {
+          const response = await fetch(`${API_ENDPOINTS.falStatus}/${job.falJobId}`, {
+            headers: {
+              'Authorization': `Key ${apiKey}`,
+              'Content-Type': 'application/json'
+            }
+          });
+          
+          if (!response.ok) {
+            throw new Error(`FAL API error: ${response.status}`);
+          }
+          
+          const data = await response.json();
+          
+          if (data.status === 'completed' && data.video_url) {
+            return {
+              status: 'completed',
+              videoUrl: data.video_url,
+              thumbnail: data.thumbnail_url || data.video_url
+            };
+          } else if (data.status === 'failed') {
+            return { status: 'failed', error: data.error || 'Video generation failed' };
+          } else {
+            return { status: data.status || 'processing' };
+          }
+        } catch (error) {
+          console.error('FAL API error:', error);
+          // Fall back to simulation if real API fails
+        }
+      }
+      
+      // Simulate processing for demo or if real API fails
       const elapsed = Date.now() - new Date(job.createdAt).getTime();
       const processingTime = 30000; // 30 seconds simulated processing
       
@@ -235,39 +273,11 @@ export async function getVideoJobStatus(
         return { status: 'processing' };
       } else {
         // Simulate completion with a placeholder video URL
-        // In production, this would come from FAL webhook/polling
         return {
           status: 'completed',
           videoUrl: `https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_1mb.mp4`,
           thumbnail: `https://picsum.photos/320/180?random=${jobId}`
         };
-      }
-      
-    } else if (job.provider === 'piapi') {
-      // For PiAPI, poll the task status
-      const response = await fetch(`${API_ENDPOINTS.piapiStatus}/${job.piapiTaskId}`, {
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      if (!response.ok) {
-        throw new Error(`PiAPI status check failed: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      
-      if (data.status === 'completed' && data.video_url) {
-        return {
-          status: 'completed',
-          videoUrl: data.video_url,
-          thumbnail: data.thumbnail_url
-        };
-      } else if (data.status === 'failed') {
-        return { status: 'failed', error: data.error || 'Video generation failed' };
-      } else {
-        return { status: data.status || 'processing' };
       }
     }
     

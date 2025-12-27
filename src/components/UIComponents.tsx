@@ -309,7 +309,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     }
   };
   
-  const isImage = url.includes('pollinations.ai') || url.match(/\.(jpg|jpeg|png|gif|webp)$/i);
+  const isImage = url.match(/\.(jpg|jpeg|png|gif|webp)$/i) && !url.includes('format=mp4');
   
   if (error || isImage) {
     return (
