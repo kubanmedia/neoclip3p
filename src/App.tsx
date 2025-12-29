@@ -760,9 +760,9 @@ const App: React.FC = () => {
       <div className="mt-6 text-xs text-white/30 text-center space-y-2">
         <p>Subscription auto-renews monthly unless cancelled.</p>
         <p>Payment will be charged to your account upon confirmation.</p>
-        <a href="#" className="text-cyan-400 underline">Terms of Service</a>
+        <a href="https://digita.click/neoclip/terms-of-use.html" className="text-cyan-400 underline">Terms of Service</a>
         {' • '}
-        <a href="#" className="text-cyan-400 underline">Privacy Policy</a>
+        <a href="https://digita.click/neoclip/privacy-policy.html" className="text-cyan-400 underline">Privacy Policy</a>
       </div>
     </div>
   );
