@@ -1,73 +1,61 @@
-import { VercelRequest, VercelResponse } from '@vercel/node';
+import type { NextApiRequest, NextApiResponse } from "next";
+import { fal } from "@fal-ai/client";
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+fal.config({
+  credentials: process.env.FAL_API_KEY!,
+});
+
+export default async function handler(
+  req: NextApiRequest,
+  res: NextApiResponse
+) {
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  // 🔴 HARD FAIL — no silent credit burn
+  if (!process.env.FAL_API_KEY) {
+    return res.status(500).json({
+      error: "FAL_API_KEY is not configured",
+    });
+  }
+
+  const { prompt, duration = 5 } = req.body;
+
+  if (!prompt || typeof prompt !== "string") {
+    return res.status(400).json({ error: "Invalid prompt" });
+  }
+
+  // Free-tier guardrail (saves money)
+  if (duration > 10) {
+    return res.status(403).json({
+      error: "Video duration exceeds allowed limit",
+    });
+  }
+
   try {
-    const { provider, prompt, aspectRatio } = req.body;
-
-    if (!provider || !prompt) {
-      return res.status(400).json({ error: 'Missing parameters' });
-    }
-
-    // Check if API keys are configured
-    const hasApiKey = 
-      (provider === 'fal' && process.env.FAL_API_KEY) ||
-      (provider === 'google' && process.env.GOOGLE_API_KEY) ||
-      (provider === 'piapi' && process.env.PIAPI_API_KEY);
-
-    if (!hasApiKey) {
-      return res.status(503).json({ 
-        error: 'Video generation unavailable. Please try again later or add API keys for better quality.',
-        fallback: true,
-        message: 'Video generation currently unavailable. The app will use image preview as fallback.'
-      });
-    }
-
-    if (provider === 'fal') {
-      const key = process.env.FAL_API_KEY;
-      const r = await fetch('https://api.fal.ai/fal-ai/video', {
-        method: 'POST',
-        headers: {
-          Authorization: `Key ${key}`,
-          'Content-Type': 'application/json'
+    // 🚀 ASYNC SUBMISSION — no waiting
+    const submission = await fal.queue.submit(
+      "fal-ai/text-to-video",
+      {
+        input: {
+          prompt,
+          duration,
         },
-        body: JSON.stringify({ prompt, aspectRatio })
-      });
-      const data = await r.json();
-      return res.status(200).json(data);
-    }
-
-    if (provider === 'google') {
-      const key = process.env.GOOGLE_API_KEY;
-      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/veo:generate?key=${key}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, aspectRatio })
-      });
-      const data = await r.json();
-      return res.status(200).json(data);
-    }
-
-    if (provider === 'piapi') {
-      const key = process.env.PIAPI_API_KEY;
-      const r = await fetch('https://api.piapi.ai/video', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${key}`,
-          'Content-Type': 'application/json'
+        webhook: {
+          url: `${process.env.APP_BASE_URL}/api/webhook`,
         },
-        body: JSON.stringify({ prompt, aspectRatio })
-      });
-      const data = await r.json();
-      return res.status(200).json(data);
-    }
+      }
+    );
 
-    return res.status(400).json({ error: 'Unknown provider' });
-  } catch (error) {
-    console.error('API Error:', error);
-    return res.status(500).json({ 
-      error: 'Video generation unavailable. Please try again later.',
-      fallback: true,
-      message: 'Video generation failed. The app will use image preview as fallback.'
+    // IMPORTANT: only return job_id
+    return res.status(200).json({
+      job_id: submission.request_id,
+    });
+  } catch (error: any) {
+    console.error("Fal submission error:", error);
+    return res.status(500).json({
+      error: "Failed to submit generation job",
     });
   }
 }
